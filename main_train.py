@@ -28,8 +28,6 @@ def plot_results(train_losses, val_losses, train_maes, val_maes):
     plt.show()
 
 if __name__ == "__main__":
-    # 1. Siapkan folder data dan deployment
-    # PENTING: Pastikan folder ini beneran ada dan isi file .npy nya di laptopmu!
     DATA_PATH = r"data/raw" 
     DEPLOY_DIR = r"deployment"
     os.makedirs(DEPLOY_DIR, exist_ok=True)
@@ -41,7 +39,7 @@ if __name__ == "__main__":
     model = CNN_LSTM_Attention()
     
     print("\n--- Memulai Proses Training ---")
-    # Kamu bisa ubah epochs-nya kalau mau tes sebentar (misal epochs=5 dulu)
+    # misal epochs=5 dulu
     train_loss, val_loss, train_mae, val_mae = train_model(
         model, train_loader, val_loader, epochs=100, lr=1e-3
     )
