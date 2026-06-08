@@ -36,13 +36,11 @@ if __name__ == "__main__":
     train_loader, val_loader = get_data_loaders(DATA_PATH, batch_size=16, val_split=0.2)
     
     print("\n--- Inisialisasi Model AI ---")
-    model = CNN_LSTM_Attention()
+    model = CNN_LSTM_Attention().to(device)
     
     print("\n--- Memulai Proses Training ---")
     # misal epochs=5 dulu
-    train_loss, val_loss, train_mae, val_mae = train_model(
-        model, train_loader, val_loader, epochs=100, lr=1e-3
-    )
+    train_loss, val_loss, train_mae, val_mae = train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3)
     
     print("\n--- Menyimpan Model ---")
     save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")

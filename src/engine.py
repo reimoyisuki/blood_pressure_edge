@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3):
+def train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3):
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -15,6 +15,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3):
         train_loss, total_mae_train = 0, 0
         
         for x, y in train_loader:
+            x, y = x.to(device), y.to(device)
+            
             optimizer.zero_grad()
             outputs = model(x)
             loss = criterion(outputs, y)
@@ -30,6 +32,8 @@ def train_model(model, train_loader, val_loader, epochs=100, lr=1e-3):
         val_loss, total_mae_val = 0, 0
         with torch.no_grad():
             for x, y in val_loader:
+                x, y = x.to(device), y.to(device)
+                
                 outputs = model(x)
                 loss = criterion(outputs, y)
                 val_loss += loss.item()
