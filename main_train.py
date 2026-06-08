@@ -32,15 +32,22 @@ if __name__ == "__main__":
     DEPLOY_DIR = r"deployment"
     os.makedirs(DEPLOY_DIR, exist_ok=True)
     
+    # Deteksi ketersediaan GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n--- MENGGUNAKAN DEVICE: {device.type.upper()} ---\n")
+    
     print("--- Memuat dan Memproses Data ---")
     train_loader, val_loader = get_data_loaders(DATA_PATH, batch_size=16, val_split=0.2)
     
     print("\n--- Inisialisasi Model AI ---")
+    # Pindahkan seluruh arsitektur model ke GPU
     model = CNN_LSTM_Attention().to(device)
     
     print("\n--- Memulai Proses Training ---")
-    # misal epochs=5 dulu
-    train_loss, val_loss, train_mae, val_mae = train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3)
+    # Lempar variabel device ke dalam fungsi train_model
+    train_loss, val_loss, train_mae, val_mae = train_model(
+        model, train_loader, val_loader, device, epochs=100, lr=1e-3
+    )
     
     print("\n--- Menyimpan Model ---")
     save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")
