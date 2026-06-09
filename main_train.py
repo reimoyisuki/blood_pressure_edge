@@ -37,7 +37,7 @@ if __name__ == "__main__":
     print(f"\n--- MENGGUNAKAN DEVICE: {device.type.upper()} ---\n")
     
     print("--- Memuat dan Memproses Data ---")
-    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=16, val_split=0.2)
+    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=16, val_split=0.15, test_split=0.15)
     
     print("\n--- Inisialisasi Model AI ---")
     # Pindahkan seluruh arsitektur model ke GPU
@@ -49,10 +49,23 @@ if __name__ == "__main__":
         model, train_loader, val_loader, device, epochs=100, lr=1e-3
     )
     
-    print("\n--- Menyimpan Model ---")
-    save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")
-    torch.save(model.state_dict(), save_path)
-    print(f"Model berhasil disimpan ke: {save_path}")
-    
     print("\n--- Membuat Grafik Performa ---")
     plot_results(train_loss, val_loss, train_mae, val_mae)
+    
+    print("\n--- Fase Testing ---")
+    save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")
+    
+    model.load_state_dict(torch.load(save_path))
+    model.eval() 
+
+    total_mae_test = 0
+    with torch.no_grad():
+        for x_test, y_test in test_loader:
+            x_test, y_test = x_test.to(device), y_test.to(device)
+            outputs = model(x_test)
+            mae = torch.mean(torch.abs(outputs - y_test)).item()
+            total_mae_test += mae
+
+    avg_test_mae = total_mae_test / len(test_loader)
+    print(f"AKURASI FINAL (Test MAE)  : {avg_test_mae:.4f} mmHg")
+    print(f"Model Terbaik Tersimpan di: {save_path}")
