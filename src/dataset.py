@@ -18,9 +18,9 @@ class PPGDataset(Dataset):
         label = torch.tensor(self.labels[idx], dtype=torch.float32)  # (SBP, DBP)
         return signal, label
 
-def get_data_loaders(data_path, batch_size=16, val_split=0.2):
+def get_data_loaders(data_path, batch_size=16, val_split=0.15, test_split=0.15):
     """
-    Fungsi untuk membaca file .npy, preprocessing, dan membagi train/val loader
+    Fungsi untuk membaca file .npy, preprocessing, dan membagi train/val/test loader
     """
     patients = set([fn.split("_")[0] for fn in os.listdir(data_path) if fn.endswith("_ppg.npy")])
     signals, labels = [], []
@@ -46,15 +46,35 @@ def get_data_loaders(data_path, batch_size=16, val_split=0.2):
 
     print(f"Total sinyal berhasil dimuat: {len(signals)}")
     
-    # Split train dan validation
-    split_idx = int((1 - val_split) * len(signals))
-    train_signals, val_signals = signals[:split_idx], signals[split_idx:]
-    train_labels, val_labels = labels[:split_idx], labels[split_idx:]
+    # Menghitung indeks pemotongan (70% Train, 15% Val, 15% Test)
+    total_data = len(signals)
+    train_ratio = 1.0 - val_split - test_split # Menjadi 0.70
+    
+    train_split_idx = int(train_ratio * total_data)
+    val_split_idx = int(val_split * total_data)
 
+    # 1. Potong Data Training
+    train_signals = signals[:train_split_idx]
+    train_labels = labels[:train_split_idx]
+
+    # 2. Potong Data Validation
+    val_signals = signals[train_split_idx : train_split_idx + val_split_idx]
+    val_labels = labels[train_split_idx : train_split_idx + val_split_idx]
+
+    # 3. Potong Data Testing (Sisa 15% terakhir)
+    test_signals = signals[train_split_idx + val_split_idx :]
+    test_labels = labels[train_split_idx + val_split_idx :]
+
+    # Masukkan ke format Dataset
     train_dataset = PPGDataset(train_signals, train_labels)
     val_dataset = PPGDataset(val_signals, val_labels)
+    test_dataset = PPGDataset(test_signals, test_labels)
 
+    # Bungkus ke DataLoader
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    # Test loader tidak perlu di-shuffle
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader
+    # Kembalikan 3 loader
+    return train_loader, val_loader, test_loader
