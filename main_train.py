@@ -55,7 +55,7 @@ if __name__ == "__main__":
     print("\n--- Fase Testing ---")
     save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")
     
-    model.load_state_dict(torch.load(save_path))
+    model.load_state_dict(torch.load(save_path, map_location=device))
     model.eval() 
 
     total_mae_test = 0
