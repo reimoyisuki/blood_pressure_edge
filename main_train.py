@@ -46,7 +46,7 @@ if __name__ == "__main__":
     print("\n--- Memulai Proses Training ---")
     # Lempar variabel device ke dalam fungsi train_model
     train_loss, val_loss, train_mae, val_mae = train_model(
-        model, train_loader, val_loader, device, epochs=100, lr=1e-3
+        model, train_loader, val_loader, device, epochs=100, lr=3e-4
     )
     
     print("\n--- Membuat Grafik Performa ---")

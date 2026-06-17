@@ -13,7 +13,7 @@ def calculate_r2(y_true, y_pred):
     return torch.mean(r2).item()
 
 def train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3, output_dir="deployment"):
-    criterion = nn.MSELoss()
+    criterion = nn.HuberLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # LR Scheduling
