@@ -37,7 +37,7 @@ if __name__ == "__main__":
     print(f"\n--- MENGGUNAKAN DEVICE: {device.type.upper()} ---\n")
     
     print("--- Memuat dan Memproses Data ---")
-    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=16, val_split=0.15, test_split=0.15)
+    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=32, val_split=0.15, test_split=0.15)
     
     print("\n--- Inisialisasi Model AI ---")
     # Pindahkan seluruh arsitektur model ke GPU
