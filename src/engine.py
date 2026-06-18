@@ -3,100 +3,119 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import os
-import json  
+import json
+import pandas as pd
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 
-def calculate_r2(y_true, y_pred):
-    target_mean = torch.mean(y_true, dim=0)
-    ss_tot = torch.sum((y_true - target_mean) ** 2, dim=0)
-    ss_res = torch.sum((y_true - y_pred) ** 2, dim=0)
-    r2 = 1 - (ss_res / (ss_tot + 1e-8))
-    return torch.mean(r2).item()
-
-def train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3, output_dir="deployment"):
-    criterion = nn.HuberLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+def train_model(model, train_loader, val_loader, device, epochs=100, lr=1e-3, 
+                beta1=0.9, beta2=0.999, eps=1e-8, output_dir="deployment"):
     
-    # LR Scheduling
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)
+    # Kriteria Loss (Bisa pakai MSE atau Huber Loss)
+    criterion = nn.MSELoss()
+    
+    # 1. Adam Optimizer dengan Parameter Kustom
+    optimizer = optim.Adam(model.parameters(), lr=lr, betas=(beta1, beta2), eps=eps)
+    
+    # 2. Learning Rate Scheduling (Turunkan LR setengahnya jika Val RMSE tidak membaik selama 5 epoch)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
     
     best_loss = float('inf')
     patience = 15
     patience_counter = 0
-    
-    train_losses, val_losses, train_maes, val_maes = [], [], [], []
-    history_log = [] # 1. Wadah untuk menampung metrik dari epoch 1 sampai akhir
+    history_log = []
+
+    print("\n" + "="*80)
+    print(f"{'EPOCH':^7} | {'TRAIN RMSE':^12} | {'VAL RMSE':^10} | {'TRAIN MAE':^10} | {'VAL MAE':^9} | {'VAL R2':^8}")
+    print("="*80)
 
     for epoch in range(epochs):
+        # ==========================================
+        # FASE TRAINING
+        # ==========================================
         model.train()
-        train_mse, train_mae, train_r2 = 0, 0, 0
+        train_preds, train_targets = [], []
         
         for x, y in train_loader:
             x, y = x.to(device), y.to(device)
-            optimizer.zero_grad()
             
-            outputs = model(x)
+            optimizer.zero_grad()
+            outputs = model(x) # Linear activation otomatis terjadi di layer nn.Linear
+            
             loss = criterion(outputs, y)
             loss.backward()
             optimizer.step()
             
-            train_mse += loss.item()
-            train_mae += torch.mean(torch.abs(outputs - y)).item()
-            train_r2 += calculate_r2(y, outputs)
+            # Simpan hasil untuk metrik epoch-wise
+            train_preds.append(outputs.detach().cpu().numpy())
+            train_targets.append(y.detach().cpu().numpy())
 
+        # Gabungkan semua batch untuk akurasi metrik yang valid
+        train_preds = np.vstack(train_preds)
+        train_targets = np.vstack(train_targets)
+        
+        t_rmse = np.sqrt(mean_squared_error(train_targets, train_preds))
+        t_mae = mean_absolute_error(train_targets, train_preds)
+        t_r2 = r2_score(train_targets, train_preds)
+
+        # ==========================================
+        # FASE VALIDATION
+        # ==========================================
         model.eval()
-        val_mse, val_mae, val_r2 = 0, 0, 0
+        val_preds, val_targets = [], []
+        
         with torch.no_grad():
             for x, y in val_loader:
                 x, y = x.to(device), y.to(device)
                 outputs = model(x)
                 
-                val_mse += criterion(outputs, y).item()
-                val_mae += torch.mean(torch.abs(outputs - y)).item()
-                val_r2 += calculate_r2(y, outputs)
+                val_preds.append(outputs.cpu().numpy())
+                val_targets.append(y.cpu().numpy())
 
-        # Kalkulasi nilai rata-rata metrik per epoch
-        t_rmse = np.sqrt(train_mse / len(train_loader))
-        t_mae = train_mae / len(train_loader)
+        val_preds = np.vstack(val_preds)
+        val_targets = np.vstack(val_targets)
         
-        v_rmse = np.sqrt(val_mse / len(val_loader))
-        v_mae = val_mae / len(val_loader)
-        v_r2 = val_r2 / len(val_loader)
+        v_rmse = np.sqrt(mean_squared_error(val_targets, val_preds))
+        v_mae = mean_absolute_error(val_targets, val_preds)
+        v_r2 = r2_score(val_targets, val_preds)
 
-        train_losses.append(train_mse / len(train_loader))
-        val_losses.append(val_mse / len(val_loader))
-        train_maes.append(t_mae)
-        val_maes.append(v_mae)
+        # ==========================================
+        # LOGGING & SCHEDULING
+        # ==========================================
+        scheduler.step(v_rmse)
+        
+        print(f"{epoch+1:^7} | {t_rmse:^12.4f} | {v_rmse:^10.4f} | {t_mae:^10.4f} | {v_mae:^9.4f} | {v_r2:^8.4f}")
 
         history_log.append({
             "epoch": epoch + 1,
-            "train_loss_mse": round(train_mse / len(train_loader), 4),
-            "val_loss_mse": round(val_mse / len(val_loader), 4),
-            "train_rmse": round(t_rmse, 4),
-            "val_rmse": round(v_rmse, 4),
-            "train_mae": round(t_mae, 4),
-            "val_mae": round(v_mae, 4),
-            "val_r2": round(v_r2, 4)
+            "train_rmse": round(t_rmse, 4), "val_rmse": round(v_rmse, 4),
+            "train_mae": round(t_mae, 4),   "val_mae": round(v_mae, 4),
+            "train_r2": round(t_r2, 4),     "val_r2": round(v_r2, 4)
         })
 
-        scheduler.step(v_rmse)
-        print(f"Epoch {epoch+1}/{epochs} | Tr RMSE: {t_rmse:.2f} | Val RMSE: {v_rmse:.2f} | Val MAE: {v_mae:.2f} | Val R2: {v_r2:.4f}")
-
-        # Simpan checkpoint model terbaik jika Val RMSE mengalami penurunan
+        # Save Best Model
+        os.makedirs(output_dir, exist_ok=True)
         if v_rmse < best_loss:
             best_loss = v_rmse
             patience_counter = 0
-            os.makedirs(output_dir, exist_ok=True)
-            torch.save(model.state_dict(), os.path.join(output_dir, "bp_regressor_model.pth"))
+            torch.save(model.state_dict(), os.path.join(output_dir, "bp_multimodal_model.pth"))
         else:
             patience_counter += 1
             if patience_counter >= patience:
-                print(f"Early stopping aktif pada epoch {epoch+1}!")
+                print(f"\n[INFO] Early stopping aktif pada epoch {epoch+1} karena tidak ada perbaikan.")
                 break
 
-    os.makedirs(output_dir, exist_ok=True)
+    print("="*80)
+    
+    # Simpan history ke JSON
     json_path = os.path.join(output_dir, "training_history.json")
     with open(json_path, "w") as f:
         json.dump(history_log, f, indent=4)
-    print(f"📄 Berkas riwayat pelatihan JSON berhasil disimpan ke: {json_path}")
+        
+    # Simpan history ke CSV
+    csv_path = os.path.join(output_dir, "training_history.csv")
+    df_history = pd.DataFrame(history_log)
+    df_history.to_csv(csv_path, index=False)
+    
+    print(f"📄 Riwayat metrik (JSON & CSV) tersimpan di: {output_dir}")
 
-    return train_losses, val_losses, train_maes, val_maes
+    return df_history

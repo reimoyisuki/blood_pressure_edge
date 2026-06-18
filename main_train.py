@@ -1,71 +1,82 @@
 import os
 import torch
+import pandas as pd
 import matplotlib.pyplot as plt
 from src.dataset import get_data_loaders
 from src.model import CNN_LSTM_Attention
 from src.engine import train_model
 
-def plot_results(train_losses, val_losses, train_maes, val_maes):
-    epochs = range(1, len(train_losses) + 1)
+def plot_results(df_history, output_dir):
+    epochs = df_history['epoch']
     
-    plt.figure(figsize=(10, 4))
+    plt.figure(figsize=(15, 4))
     
-    # Plot Loss
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, train_losses, 'b-o', label='Train Loss (MSE)')
-    plt.plot(epochs, val_losses, 'r-o', label='Val Loss (MSE)')
-    plt.xlabel('Epoch'); plt.ylabel('Loss'); plt.legend(); plt.title('Loss')
+    # 1. Plot RMSE
+    plt.subplot(1, 3, 1)
+    plt.plot(epochs, df_history['train_rmse'], 'b-', label='Train RMSE')
+    plt.plot(epochs, df_history['val_rmse'], 'r-', label='Val RMSE')
+    plt.xlabel('Epoch'); plt.ylabel('RMSE'); plt.legend(); plt.title('Root Mean Square Error')
 
-    # Plot MAE
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, train_maes, 'b-o', label='Train MAE')
-    plt.plot(epochs, val_maes, 'r-o', label='Val MAE')
+    # 2. Plot MAE
+    plt.subplot(1, 3, 2)
+    plt.plot(epochs, df_history['train_mae'], 'b-', label='Train MAE')
+    plt.plot(epochs, df_history['val_mae'], 'r-', label='Val MAE')
     plt.xlabel('Epoch'); plt.ylabel('MAE'); plt.legend(); plt.title('Mean Absolute Error')
 
+    # 3. Plot R2
+    plt.subplot(1, 3, 3)
+    plt.plot(epochs, df_history['train_r2'], 'b-', label='Train R2')
+    plt.plot(epochs, df_history['val_r2'], 'r-', label='Val R2')
+    plt.xlabel('Epoch'); plt.ylabel('R-Squared (R2)'); plt.legend(); plt.title('R-Squared')
+
     plt.tight_layout()
-    plt.savefig("training_results.png", dpi=300)
-    print("Grafik disimpan sebagai 'training_results.png'")
+    graph_path = os.path.join(output_dir, "training_grafik.png")
+    plt.savefig(graph_path, dpi=300)
+    print(f"📊 Grafik disimpan di: {graph_path}")
     plt.show()
 
 if __name__ == "__main__":
-    DATA_PATH = r"data/raw" 
-    DEPLOY_DIR = r"deployment"
-    os.makedirs(DEPLOY_DIR, exist_ok=True)
+    # --- PATH SESUAIKAN DENGAN GOOGLE DRIVE KAMU ---
+    # Asumsikan kamu meletakkan dataset mentah di sini
+    DATA_PATH = r"/content/drive/MyDrive/Dataset_Magang/data_raw" 
     
-    # Deteksi ketersediaan GPU
+    # Output path yang kamu minta
+    OUTPUT_DIR = r"/content/drive/MyDrive/Dataset_Magang/outputs/regresi"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
+    # Deteksi ketersediaan GPU T4 Google Colab
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\n--- MENGGUNAKAN DEVICE: {device.type.upper()} ---\n")
+    print(f"\n🚀 MENGGUNAKAN DEVICE: {device.type.upper()} 🚀\n")
     
-    print("--- Memuat dan Memproses Data ---")
+    print("--- 1. Memuat dan Memproses Data ---")
+    # Jika datanya sangat besar, pastikan batch_size disesuaikan dengan VRAM GPU T4 (contoh: 32 atau 64)
     train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=32, val_split=0.15, test_split=0.15)
     
-    print("\n--- Inisialisasi Model AI ---")
-    # Pindahkan seluruh arsitektur model ke GPU
+    print("\n--- 2. Inisialisasi Model AI ---")
     model = CNN_LSTM_Attention().to(device)
     
-    print("\n--- Memulai Proses Training ---")
-    # Lempar variabel device ke dalam fungsi train_model
-    train_loss, val_loss, train_mae, val_mae = train_model(
-        model, train_loader, val_loader, device, epochs=100, lr=3e-4
+    print("\n--- 3. Memulai Proses Training (100 Epochs) ---")
+    # Kita menggunakan parameter Adam sesuai request
+    df_history = train_model(
+        model=model, 
+        train_loader=train_loader, 
+        val_loader=val_loader, 
+        device=device, 
+        epochs=100, 
+        lr=1e-3,          # Learning Rate
+        beta1=0.9,        # Beta 1
+        beta2=0.999,      # Beta 2
+        eps=1e-8,         # Epsilon
+        output_dir=OUTPUT_DIR
     )
     
-    print("\n--- Membuat Grafik Performa ---")
-    plot_results(train_loss, val_loss, train_mae, val_mae)
+    print("\n--- 4. Tabel Riwayat Training ---")
+    # Menampilkan 5 epoch awal dan 5 epoch akhir
+    print(df_history.head())
+    print("...")
+    print(df_history.tail())
     
-    print("\n--- Fase Testing ---")
-    save_path = os.path.join(DEPLOY_DIR, "bp_model.pth")
+    print("\n--- 5. Membuat Grafik Performa ---")
+    plot_results(df_history, OUTPUT_DIR)
     
-    model.load_state_dict(torch.load(save_path, map_location=device))
-    model.eval() 
-
-    total_mae_test = 0
-    with torch.no_grad():
-        for x_test, y_test in test_loader:
-            x_test, y_test = x_test.to(device), y_test.to(device)
-            outputs = model(x_test)
-            mae = torch.mean(torch.abs(outputs - y_test)).item()
-            total_mae_test += mae
-
-    avg_test_mae = total_mae_test / len(test_loader)
-    print(f"AKURASI FINAL (Test MAE)  : {avg_test_mae:.4f} mmHg")
-    print(f"Model Terbaik Tersimpan di: {save_path}")
+    print("\n✅ SELURUH PROSES SELESAI. Semua file tersimpan di Google Drive!")
