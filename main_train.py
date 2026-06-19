@@ -1,82 +1,109 @@
 import os
 import torch
-import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from src.dataset import get_data_loaders
 from src.model import CNN_LSTM_Attention
 from src.engine import train_model
 
 def plot_results(df_history, output_dir):
     epochs = df_history['epoch']
+    plt.figure(figsize=(15, 5))
     
-    plt.figure(figsize=(15, 4))
-    
-    # 1. Plot RMSE
+    # Grafik RMSE
     plt.subplot(1, 3, 1)
-    plt.plot(epochs, df_history['train_rmse'], 'b-', label='Train RMSE')
-    plt.plot(epochs, df_history['val_rmse'], 'r-', label='Val RMSE')
+    plt.plot(epochs, df_history['train_rmse'], 'b-o', markersize=3, label='Train')
+    plt.plot(epochs, df_history['val_rmse'], 'r-o', markersize=3, label='Val')
     plt.xlabel('Epoch'); plt.ylabel('RMSE'); plt.legend(); plt.title('Root Mean Square Error')
+    plt.grid(alpha=0.3)
 
-    # 2. Plot MAE
+    # Grafik MAE
     plt.subplot(1, 3, 2)
-    plt.plot(epochs, df_history['train_mae'], 'b-', label='Train MAE')
-    plt.plot(epochs, df_history['val_mae'], 'r-', label='Val MAE')
-    plt.xlabel('Epoch'); plt.ylabel('MAE'); plt.legend(); plt.title('Mean Absolute Error')
+    plt.plot(epochs, df_history['train_mae'], 'b-o', markersize=3, label='Train')
+    plt.plot(epochs, df_history['val_mae'], 'r-o', markersize=3, label='Val')
+    plt.xlabel('Epoch'); plt.ylabel('MAE (mmHg)'); plt.legend(); plt.title('Mean Absolute Error')
+    plt.grid(alpha=0.3)
 
-    # 3. Plot R2
+    # Grafik R-Squared
     plt.subplot(1, 3, 3)
-    plt.plot(epochs, df_history['train_r2'], 'b-', label='Train R2')
-    plt.plot(epochs, df_history['val_r2'], 'r-', label='Val R2')
-    plt.xlabel('Epoch'); plt.ylabel('R-Squared (R2)'); plt.legend(); plt.title('R-Squared')
+    plt.plot(epochs, df_history['train_r2'], 'b-o', markersize=3, label='Train')
+    plt.plot(epochs, df_history['val_r2'], 'r-o', markersize=3, label='Val')
+    plt.xlabel('Epoch'); plt.ylabel('R2 Score'); plt.legend(); plt.title('R-Squared')
+    plt.grid(alpha=0.3)
 
     plt.tight_layout()
-    graph_path = os.path.join(output_dir, "training_grafik.png")
+    graph_path = os.path.join(output_dir, "training_grafik_edge.png")
     plt.savefig(graph_path, dpi=300)
-    print(f"📊 Grafik disimpan di: {graph_path}")
+    print(f"Grafik divisualisasikan dan disimpan di: {graph_path}")
     plt.show()
 
+def evaluate_test_data(model, test_loader, device, model_path):
+    print("\n" + "="*80)
+    print("MEMULAI FASE TESTING (EVALUASI PADA DATA UNSEEN) ")
+    print("="*80)
+    
+    # Memuat bobot model terbaik hasil dari fase training
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval() # Kunci model agar tidak melakukan update bobot
+    
+    test_preds, test_targets = [], []
+    
+    # Mematikan komputasi gradien untuk menghemat memori
+    with torch.no_grad():
+        for x, y in test_loader:
+            x, y = x.to(device), y.to(device)
+            outputs = model(x)
+            
+            test_preds.append(outputs.cpu().numpy())
+            test_targets.append(y.cpu().numpy())
+            
+    # Menggabungkan hasil seluruh batch
+    test_preds = np.vstack(test_preds)
+    test_targets = np.vstack(test_targets)
+    
+    # Menghitung Metrik Final
+    t_rmse = np.sqrt(mean_squared_error(test_targets, test_preds))
+    t_mae = mean_absolute_error(test_targets, test_preds)
+    t_r2 = r2_score(test_targets, test_preds)
+    
+    print(f"HASIL AKHIR PADA DATA TESTING:")
+    print(f"   - Test RMSE : {t_rmse:.4f}")
+    print(f"   - Test MAE  : {t_mae:.4f} mmHg")
+    print(f"   - Test R2   : {t_r2:.4f}")
+    print("="*80)
+
 if __name__ == "__main__":
-    # --- PATH SESUAIKAN DENGAN GOOGLE DRIVE KAMU ---
-    # Asumsikan kamu meletakkan dataset mentah di sini
+    # Setup Path yang mengarah ke Google Drive
     DATA_PATH = r"/content/drive/MyDrive/Dataset_Magang/data_raw" 
-    
-    # Output path yang kamu minta
     OUTPUT_DIR = r"/content/drive/MyDrive/Dataset_Magang/outputs/regresi"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
     
-    # Deteksi ketersediaan GPU T4 Google Colab
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"\n🚀 MENGGUNAKAN DEVICE: {device.type.upper()} 🚀\n")
+    print(f"\nMEMULAI PROSES DI DEVICE: {device.type.upper()}\n")
     
-    print("--- 1. Memuat dan Memproses Data ---")
-    # Jika datanya sangat besar, pastikan batch_size disesuaikan dengan VRAM GPU T4 (contoh: 32 atau 64)
-    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=32, val_split=0.15, test_split=0.15)
+    # 1. Menyiapkan DataLoader (Train, Val, dan Test)
+    train_loader, val_loader, test_loader = get_data_loaders(DATA_PATH, batch_size=32)
     
-    print("\n--- 2. Inisialisasi Model AI ---")
+    # 2. Inisialisasi Model
     model = CNN_LSTM_Attention().to(device)
     
-    print("\n--- 3. Memulai Proses Training (100 Epochs) ---")
-    # Kita menggunakan parameter Adam sesuai request
+    # 3. Menjalankan Engine Training (Train & Validasi)
     df_history = train_model(
         model=model, 
         train_loader=train_loader, 
         val_loader=val_loader, 
         device=device, 
         epochs=100, 
-        lr=1e-3,          # Learning Rate
-        beta1=0.9,        # Beta 1
-        beta2=0.999,      # Beta 2
-        eps=1e-8,         # Epsilon
+        lr=1e-3, 
+        patience=10, 
         output_dir=OUTPUT_DIR
     )
     
-    print("\n--- 4. Tabel Riwayat Training ---")
-    # Menampilkan 5 epoch awal dan 5 epoch akhir
-    print(df_history.head())
-    print("...")
-    print(df_history.tail())
-    
-    print("\n--- 5. Membuat Grafik Performa ---")
+    # 4. Evaluasi Visual
     plot_results(df_history, OUTPUT_DIR)
     
-    print("\n✅ SELURUH PROSES SELESAI. Semua file tersimpan di Google Drive!")
+    # 5. Fase Testing
+    best_model_path = os.path.join(OUTPUT_DIR, "bp_edge_model.pth")
+    evaluate_test_data(model, test_loader, device, best_model_path)
+    
+    print("\nSELURUH PROSES SELESAI!")

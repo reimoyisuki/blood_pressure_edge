@@ -7,12 +7,12 @@ def preprocess_ppg(ppg_signal, fs=125):
     b, a = butter(3, [0.5/(fs/2), 8/(fs/2)], btype='band')
     filtered = filtfilt(b, a, ppg_signal)
     
-    # 2. Baseline Correction
-    # Menghilangkan efek wandering baseline (kemiringan sinyal)
+    # 2. Baseline Correction (detrending)
+    # Menghilangkan efek wandering baseline (kemiringan sinyal) biar rata di tengah
     corrected = detrend(filtered, type='linear')
     
-    # 3. Artefact Removal (Clipping)
-    # Membuang lonjakan anomali ekstrem dengan membatasi di persentil 1% dan 99%
+    # 3. Artefact Removal (Clipping threshold)
+    # motong lonjakan anomali ekstrem (karena pergerakan jari) dengan membatasi di persentil 1% dan 99%
     lower_bound = np.percentile(corrected, 1)
     upper_bound = np.percentile(corrected, 99)
     clipped = np.clip(corrected, lower_bound, upper_bound)
